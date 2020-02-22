@@ -4,3 +4,7 @@ Output/
 Cargo.lock
 target/
 .DS_Store
+.clangd
+build
+compile_commands.json
+*.pyc

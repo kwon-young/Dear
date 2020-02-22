@@ -1,14 +1,15 @@
 /*  Copyright (C) 2012-2019 by László Nagy
-    This file is part of Bear.
+    This file is part of Dear.
 
-    Bear is a tool to generate compilation database for clang tooling.
+    Dear is a tool to transparently distribute workload launched by build
+    systems.
 
-    Bear is free software: you can redistribute it and/or modify
+    Dear is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
 
-    Bear is distributed in the hope that it will be useful,
+    Dear is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
@@ -23,12 +24,10 @@
  * related to process creation. By pre-load this library the executed process
  * uses these functions instead of those from the standard library.
  *
- * The idea here is to inject a logic before call the real methods. The logic is
- * to dump the call into a file. To call the real method this library is doing
- * the job of the dynamic linker.
+ * The idea here is to inject a logic before call the real methods. Instead of
+ * calling the real method, the call is sent to the celery broker to be
+ * distributed among available brokers.
  *
- * The only input for the log writing is about the destination directory.
- * This is passed as environment variable.
  */
 
 #include "config.h"
@@ -59,19 +58,18 @@ static char **environ;
 extern char **environ;
 #endif
 
-#define ENV_OUTPUT "INTERCEPT_BUILD_TARGET_DIR"
 #ifdef APPLE
 # define ENV_FLAT    "DYLD_FORCE_FLAT_NAMESPACE"
 # define ENV_PRELOAD "DYLD_INSERT_LIBRARIES"
-# define ENV_SIZE 3
+# define ENV_SIZE 2
 #else
 # define ENV_PRELOAD "LD_PRELOAD"
-# define ENV_SIZE 2
+# define ENV_SIZE 1
 #endif
 
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
-#define AT "libear: (" __FILE__ ":" TOSTRING(__LINE__) ") "
+#define AT "libdear: (" __FILE__ ":" TOSTRING(__LINE__) ") "
 
 #define PERROR(msg) do { perror(AT msg); } while (0)
 
@@ -89,31 +87,29 @@ extern char **environ;
     TYPE_ const VAR_ = cast.to;
 
 
-typedef char const * bear_env_t[ENV_SIZE];
+typedef char const * dear_env_t[ENV_SIZE];
 
-static int capture_env_t(bear_env_t *env);
-static void release_env_t(bear_env_t *env);
-static char const **string_array_partial_update(char *const envp[], bear_env_t *env);
+static int capture_env_t(dear_env_t *env);
+static void release_env_t(dear_env_t *env);
+static char const **string_array_partial_update(char *const envp[], dear_env_t *env);
 static char const **string_array_single_update(char const *envs[], char const *key, char const *value);
 static void report_call(char const *const argv[]);
-static int write_report(int fd, char const *const argv[]);
+static int write_report(char const *const argv[]);
 static char const **string_array_from_varargs(char const * arg, va_list *args);
 static char const **string_array_copy(char const **in);
 static size_t string_array_length(char const *const *in);
 static void string_array_release(char const **);
 
 
-static bear_env_t env_names =
-    { ENV_OUTPUT
-    , ENV_PRELOAD
+static dear_env_t env_names =
+    { ENV_PRELOAD
 #ifdef ENV_FLAT
     , ENV_FLAT
 #endif
     };
 
-static bear_env_t initial_env =
+static dear_env_t initial_env =
     { 0
-    , 0
 #ifdef ENV_FLAT
     , 0
 #endif
@@ -169,6 +165,7 @@ static int call_posix_spawnp(pid_t *restrict pid, const char *restrict file,
 
 static void on_load(void) {
     pthread_mutex_lock(&mutex);
+    printf("on_load\n");
     if (0 == initialized)
         initialized = mt_safe_on_load();
     pthread_mutex_unlock(&mutex);
@@ -176,6 +173,7 @@ static void on_load(void) {
 
 static void on_unload(void) {
     pthread_mutex_lock(&mutex);
+    printf("on_unload\n");
     if (0 != initialized)
         mt_safe_on_unload();
     initialized = 0;
@@ -212,6 +210,7 @@ int execve(const char *path, char *const argv[], char *const envp[]) {
 #error can not implement execv without execve
 #endif
 int execv(const char *path, char *const argv[]) {
+    printf("execv\n");
     report_call((char const *const *)argv);
     return call_execve(path, argv, environ);
 }
@@ -219,6 +218,7 @@ int execv(const char *path, char *const argv[]) {
 
 #ifdef HAVE_EXECVPE
 int execvpe(const char *file, char *const argv[], char *const envp[]) {
+    printf("execvpe\n");
     report_call((char const *const *)argv);
     return call_execvpe(file, argv, envp);
 }
@@ -226,6 +226,7 @@ int execvpe(const char *file, char *const argv[], char *const envp[]) {
 
 #ifdef HAVE_EXECVP
 int execvp(const char *file, char *const argv[]) {
+    printf("execvp\n");
     report_call((char const *const *)argv);
     return call_execvp(file, argv);
 }
@@ -233,6 +234,7 @@ int execvp(const char *file, char *const argv[]) {
 
 #ifdef HAVE_EXECVP2
 int execvP(const char *file, const char *search_path, char *const argv[]) {
+    printf("execvP\n");
     report_call((char const *const *)argv);
     return call_execvP(file, search_path, argv);
 }
@@ -240,6 +242,7 @@ int execvP(const char *file, const char *search_path, char *const argv[]) {
 
 #ifdef HAVE_EXECT
 int exect(const char *path, char *const argv[], char *const envp[]) {
+    printf("execvt\n");
     report_call((char const *const *)argv);
     return call_exect(path, argv, envp);
 }
@@ -250,6 +253,7 @@ int exect(const char *path, char *const argv[], char *const envp[]) {
 #  error can not implement execl without execve
 # endif
 int execl(const char *path, const char *arg, ...) {
+    printf("execl\n");
     va_list args;
     va_start(args, arg);
     char const **argv = string_array_from_varargs(arg, &args);
@@ -268,6 +272,7 @@ int execl(const char *path, const char *arg, ...) {
 #  error can not implement execlp without execvp
 # endif
 int execlp(const char *file, const char *arg, ...) {
+    printf("execlp\n");
     va_list args;
     va_start(args, arg);
     char const **argv = string_array_from_varargs(arg, &args);
@@ -287,6 +292,7 @@ int execlp(const char *file, const char *arg, ...) {
 # endif
 // int execle(const char *path, const char *arg, ..., char * const envp[]);
 int execle(const char *path, const char *arg, ...) {
+    printf("execle\n");
     va_list args;
     va_start(args, arg);
     char const **argv = string_array_from_varargs(arg, &args);
@@ -307,6 +313,7 @@ int posix_spawn(pid_t *restrict pid, const char *restrict path,
                 const posix_spawn_file_actions_t *file_actions,
                 const posix_spawnattr_t *restrict attrp,
                 char *const argv[restrict], char *const envp[restrict]) {
+    printf("posix_spawn\n");
     report_call((char const *const *)argv);
     return call_posix_spawn(pid, path, file_actions, attrp, argv, envp);
 }
@@ -317,6 +324,7 @@ int posix_spawnp(pid_t *restrict pid, const char *restrict file,
                  const posix_spawn_file_actions_t *file_actions,
                  const posix_spawnattr_t *restrict attrp,
                  char *const argv[restrict], char *const envp[restrict]) {
+    printf("posix_spawnp\n");
     report_call((char const *const *)argv);
     return call_posix_spawnp(pid, file, file_actions, attrp, argv, envp);
 }
@@ -449,82 +457,33 @@ static int call_posix_spawnp(pid_t *restrict pid, const char *restrict file,
 static void report_call(char const *const argv[]) {
     if (!initialized)
         return;
-    // Create report file name
-    char const * const out_dir = initial_env[0];
-    size_t const path_max_length = strlen(out_dir) + 32;
-    char filename[path_max_length];
-    if (-1 == snprintf(filename, path_max_length, "%s/execution.XXXXXX", out_dir))
-        ERROR_AND_EXIT("snprintf");
-    // Create report file
-    int fd = mkstemp((char *)&filename);
-    if (-1 == fd)
-        ERROR_AND_EXIT("mkstemp");
-    // Write report file
-    const int finished = write_report(fd, argv);
-    // Close report file
-    if (close(fd))
-        ERROR_AND_EXIT("close");
-    // Remove the file if it's not done
-    if ((-1 == finished) && (-1 == unlink(filename)))
-        ERROR_AND_EXIT("unlink");
+    // Write report
+    const int finished = write_report(argv);
 }
 
-static int write_binary_string(int fd, const char *const string) {
-    // write type
-    if (-1 == write(fd, "str", 3)) {
-        PERROR("write type");
-        return -1;
-    }
-    // write length
-    const uint32_t length = strlen(string);
-    if (-1 == write(fd, (void *) &length, sizeof(uint32_t))) {
-        PERROR("write length");
-        return -1;
-    }
-    // write value
-    if (-1 == write(fd, (void *) string, length)) {
-        PERROR("write value");
-        return -1;
-    }
-    return 0;
-}
-
-static int write_binary_string_list(int fd, const char *const *const strings) {
-    // write type
-    if (-1 == write(fd, "lst", 3)) {
-        PERROR("write type");
-        return -1;
-    }
+static int write_binary_string_list(const char *const *const strings) {
     // write length
     const uint32_t length = string_array_length(strings);
-    if (-1 == write(fd, (void *) &length, sizeof(uint32_t))) {
-        PERROR("write length");
-        return -1;
-    }
+    printf("%d\t", length);
     // write value
     for (uint32_t idx = 0; idx < length; ++idx) {
         const char *string = strings[idx];
-        if (-1 == write_binary_string(fd, string)) {
-            PERROR("write value");
-            return -1;
-        }
+        printf("%s ", string);
     }
+    printf("\n");
     return 0;
 }
 
-static int write_report(int fd, char const *const argv[]) {
+static int write_report(char const *const argv[]) {
     const char *cwd = getcwd(NULL, 0);
     if (0 == cwd) {
         PERROR("getcwd");
         return -1;
     } else {
-        if (-1 == write_binary_string(fd, cwd)) {
-            PERROR("cwd writing failed");
-            return -1;
-        }
+        printf("%s\n", cwd);
     }
     free((void *)cwd);
-    if (-1 == write_binary_string_list(fd, argv)) {
+    if (-1 == write_binary_string_list(argv)) {
         PERROR("cmd writing failed");
         return -1;
     }
@@ -534,7 +493,7 @@ static int write_report(int fd, char const *const argv[]) {
 /* update environment assure that chilren processes will copy the desired
  * behaviour */
 
-static int capture_env_t(bear_env_t *env) {
+static int capture_env_t(dear_env_t *env) {
     for (size_t it = 0; it < ENV_SIZE; ++it) {
         char const * const env_value = getenv(env_names[it]);
         if (0 == env_value) {
@@ -553,14 +512,14 @@ static int capture_env_t(bear_env_t *env) {
     return 1;
 }
 
-static void release_env_t(bear_env_t *env) {
+static void release_env_t(dear_env_t *env) {
     for (size_t it = 0; it < ENV_SIZE; ++it) {
         free((void *)(*env)[it]);
         (*env)[it] = 0;
     }
 }
 
-static char const **string_array_partial_update(char *const envp[], bear_env_t *env) {
+static char const **string_array_partial_update(char *const envp[], dear_env_t *env) {
     char const **result = string_array_copy((char const **)envp);
     for (size_t it = 0; it < ENV_SIZE && (*env)[it]; ++it)
         result = string_array_single_update(result, env_names[it], (*env)[it]);

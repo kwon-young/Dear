@@ -19,20 +19,23 @@ find_package(Threads REQUIRED)
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config.h.in ${CMAKE_CURRENT_BINARY_DIR}/config.h)
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
-add_library(ear SHARED ear.c)
-target_link_libraries(ear ${CMAKE_DL_LIBS})
+add_library(dear SHARED dear.c)
+target_link_libraries(dear ${CMAKE_DL_LIBS})
 if(THREADS_HAVE_PTHREAD_ARG)
-    set_property(TARGET ear PROPERTY COMPILE_OPTIONS "-pthread")
-    set_property(TARGET ear PROPERTY INTERFACE_COMPILE_OPTIONS "-pthread")
+    set_property(TARGET dear PROPERTY COMPILE_OPTIONS "-pthread")
+    set_property(TARGET dear PROPERTY INTERFACE_COMPILE_OPTIONS "-pthread")
 endif()
 if(CMAKE_THREAD_LIBS_INIT)
-    target_link_libraries(ear "${CMAKE_THREAD_LIBS_INIT}")
+    target_link_libraries(dear "${CMAKE_THREAD_LIBS_INIT}")
 endif()
 
 if(APPLE)
     set(CMAKE_MACOSX_RPATH 1)
-    set_target_properties(ear PROPERTIES INSTALL_RPATH "@loader_path/${EAR_LIB_PATH}")
+    set_target_properties(dear PROPERTIES INSTALL_RPATH "@loader_path/${DEAR_LIB_PATH}")
 endif()
 
-install(TARGETS ear
-    LIBRARY DESTINATION ${EAR_LIB_PATH})
+install(TARGETS dear
+    LIBRARY DESTINATION ${DEAR_LIB_PATH})
+
+add_executable(poc poc.c utils.c utils.h)
+target_link_libraries(poc "rabbitmq")

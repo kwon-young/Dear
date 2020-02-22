@@ -27,9 +27,9 @@ A clear and concise description of what you expected to happen.
  - Can you give us a reference to the project that you are running against this tool? [e.g. No if it's a close source project, but in case of an open source project a link to the sources could be nice.]
  - What build tools this project is using? [e.g. GNU make]
  - What architecture you are trying to compile for? [e.g. cross compiling]
- - Could you attach build logs? If you can re-run the command which failed (e.g. `bear make`) with extra verbose log switches (e.g. `bear -vvvv make`) and send the output of it, that would help a lot.
+ - Could you attach build logs? If you can re-run the command which failed (e.g. `dear make`) with extra verbose log switches (e.g. `dear -vvvv make`) and send the output of it, that would help a lot.
 
 **Before you send...**
- - Have you read the `README.md` file or `man bear`?
- - Have you looked what other open issues Bear has?
- - Are you sure that the build works without Bear?
+ - Have you read the `README.md` file or `man dear`?
+ - Have you looked what other open issues Dear has?
+ - Are you sure that the build works without Dear?
